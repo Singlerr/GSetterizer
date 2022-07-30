@@ -3,7 +3,10 @@ package io.github.singlerr.gsetterizer.actions
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformDataKeys
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.psi.*
 import com.intellij.psi.impl.PsiJavaParserFacadeImpl
 import com.intellij.psi.impl.source.resolve.JavaResolveUtil
@@ -17,6 +20,9 @@ import com.intellij.refactoring.RefactoringFactory
 import com.jetbrains.rd.util.string.PrettyPrinter
 import com.jetbrains.rd.util.string.println
 import io.github.singlerr.gsetterizer.utils.walk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.apache.commons.text.CaseUtils
 
 const val PROJECT_SCOPE = "ProjectViewPopup"
@@ -36,118 +42,115 @@ class GSetterizeAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val manager = PsiManager.getInstance(e.project!!)
         val currentFile = e.dataContext.getData(PlatformDataKeys.VIRTUAL_FILE)!!
-        if (e.place == PROJECT_SCOPE) {
 
-            val srcFiles = walk(currentFile) {
-                it.name.endsWith(".java")
-            }
-            srcFiles.forEach {
-                val psiFile = manager.findFile(it)
-
-                psiFile?.accept(object : PsiRecursiveElementWalkingVisitor() {
-                    override fun visitElement(element: PsiElement) {
-                        element.references.forEach { ref ->
-                            println(ref.canonicalText)
-                        }
-                    }
-                })
-
-            }
-        } else {
-            val psiFile = manager.findFile(currentFile)
-            psiFile?.accept(object : JavaRecursiveElementWalkingVisitor() {
-                override fun visitVariable(variable: PsiVariable?) {
-                    if(variable?.parent !is PsiClass)
-                        return
+        val visitor = object : JavaRecursiveElementWalkingVisitor() {
+            override fun visitVariable(variable: PsiVariable?) {
+                if(variable?.parent !is PsiClass)
+                    return
 
 
-                    val accessor = variable?.children.find { e -> e.elementType?.debugName == "MODIFIER_LIST" } ?: return
+                val accessor = variable?.children.find { e -> e.elementType?.debugName == "MODIFIER_LIST" } ?: return
 
-                    if(! accessor.text.contains("public"))
-                        return
+                if(! accessor.text.contains("public"))
+                    return
 
-                    val impl = PsiJavaParserFacadeImpl(e.project!!)
+                val impl = PsiJavaParserFacadeImpl(e.project!!)
 
-                    ReferencesSearch.search(variable).forEach { ref ->
-                        val leftSiblings = ref.element.siblings(forward = false, withSelf = false)
-                        val rightSiblings = ref.element.siblings(forward = true, withSelf = false)
+                ReferencesSearch.search(variable).forEach { ref ->
+                    val leftSiblings = ref.element.siblings(forward = false, withSelf = false)
+                    val rightSiblings = ref.element.siblings(forward = true, withSelf = false)
 
-                        //Determine variable read or write
-                        val variableWrite = leftSiblings.find { it.elementType?.debugName == "EQ" } == null  && rightSiblings.count { it.elementType?.debugName == "EQ" } > 0
+                    //Determine variable read or write
+                    val variableWrite = leftSiblings.find { it.elementType?.debugName == "EQ" } == null  && rightSiblings.count { it.elementType?.debugName == "EQ" } > 0
 
-                        //Java Psi Element factory
+                    //Java Psi Element factory
 
 
 
-                        val camelCaseName = CaseUtils.toCamelCase(variable!!.name, true)
-                        //Variable read
-                        if (!variableWrite) {
-                            val getter =  "get".plus(camelCaseName).plus("()")
-                            val replacement = impl.createMethodFromText(getter, variable.containingFile)
+                    val camelCaseName = CaseUtils.toCamelCase(variable!!.name, true)
+                    //Variable read
+                    if (!variableWrite) {
+                        val getter =  "get".plus(camelCaseName).plus("()")
+                        val replacement = impl.createMethodFromText(getter, variable.containingFile)
 
-                            val caller = ref.element.children.find { it.elementType?.debugName == "IDENTIFIER" }
+                        val caller = ref.element.children.find { it.elementType?.debugName == "IDENTIFIER" }
 
-                            WriteCommandAction.runWriteCommandAction(e.project){
-                                caller?.replace(replacement)
-                                accessor.replace(impl.createStatementFromText(accessor.text.replace("public","private"),variable))
-                                variable.addBefore(impl.createAnnotationFromText("@Getter",variable),variable.children.first())
-                            }
-
-                        } else {
-                            val target = ref.element.children.find { it.elementType?.debugName == "IDENTIFIER" }
-                            val eqElementIndex = ref.element.parent.children.indexOfFirst { e -> e.elementType?.debugName == "EQ" }
-                            val lastElementIndex = ref.element.parent.children.lastIndex
-
-                            val parameters = ref.element.parent.children.slice(eqElementIndex + 2..lastElementIndex)
-
-                            val methodExpression = impl.createExpressionFromText("${"set".plus(camelCaseName)}(${parameters.joinToString { it.text }})",variable.containingFile) as PsiMethodCallExpression
-
-                            WriteCommandAction.runWriteCommandAction(e.project){
-                                ref.element.parent.deleteChildRange(ref.element.parent.children[eqElementIndex],ref.element.parent.children[lastElementIndex])
-                                target?.replace(methodExpression)
-                                accessor.replace(impl.createStatementFromText(accessor.text.replace("public","private"),variable))
-                                variable.addBefore(impl.createAnnotationFromText("@Setter",variable),variable.children.first())
-                            }
-
-                            /*
-                            ref.element.parent.children.forEach {
-                                println(it.text)
-                                println(it.elementType?.debugName)
-                                println(it.javaClass.name)
-                            }
-
-                             */
-                            /*
-                            WriteCommandAction.runWriteCommandAction(e.project){
-                                ref.element.parent.addAfter( impl.createExpressionFromText("(",ref.element.parent),eqElement)
-                                ref.element.parent.addAfter( impl.createExpressionFromText(")",ref.element.parent),lastElement)
-                                //Delete EQ element
-                                ref.element.parent.deleteChildRange(eqElement,eqElement)
-
-                                val setter = "set".plus(camelCaseName)
-                                val methodSetter = impl.createExpressionFromText(setter,ref.element.parent)
-
-                                target?.replace(methodSetter)
-                            }
-                             */
-
-
-                            //val replacement = impl.createMethodFromText(setter,variable.containingFile)
-
-                            //println(setter)
-                            /*
-                            WriteCommandAction.runWriteCommandAction(e.project){
-                                ref.element.parent.replace(replacement)
-                            }
-
-                             */
-
-
+                        WriteCommandAction.runWriteCommandAction(e.project){
+                            caller?.replace(replacement)
+                            accessor.replace(impl.createStatementFromText(accessor.text.replace("public","private"),variable))
+                            variable.addBefore(impl.createAnnotationFromText("@Getter",variable),variable.children.first())
                         }
 
+                    } else {
+                        val target = ref.element.children.find { it.elementType?.debugName == "IDENTIFIER" }
+                        val eqElementIndex = ref.element.parent.children.indexOfFirst { e -> e.elementType?.debugName == "EQ" }
+                        val lastElementIndex = ref.element.parent.children.lastIndex
+
+                        val parameters = ref.element.parent.children.slice(eqElementIndex + 2..lastElementIndex)
+
+                        val methodExpression = impl.createExpressionFromText("${"set".plus(camelCaseName)}(${parameters.joinToString { it.text }})",variable.containingFile) as PsiMethodCallExpression
+
+                        WriteCommandAction.runWriteCommandAction(e.project){
+                            ref.element.parent.deleteChildRange(ref.element.parent.children[eqElementIndex],ref.element.parent.children[lastElementIndex])
+                            target?.replace(methodExpression)
+                            accessor.replace(impl.createStatementFromText(accessor.text.replace("public","private"),variable))
+                            variable.addBefore(impl.createAnnotationFromText("@Setter",variable),variable.children.first())
+                        }
+
+                        /*
+                        ref.element.parent.children.forEach {
+                            println(it.text)
+                            println(it.elementType?.debugName)
+                            println(it.javaClass.name)
+                        }
+
+                         */
+                        /*
+                        WriteCommandAction.runWriteCommandAction(e.project){
+                            ref.element.parent.addAfter( impl.createExpressionFromText("(",ref.element.parent),eqElement)
+                            ref.element.parent.addAfter( impl.createExpressionFromText(")",ref.element.parent),lastElement)
+                            //Delete EQ element
+                            ref.element.parent.deleteChildRange(eqElement,eqElement)
+
+                            val setter = "set".plus(camelCaseName)
+                            val methodSetter = impl.createExpressionFromText(setter,ref.element.parent)
+
+                            target?.replace(methodSetter)
+                        }
+                         */
+
+
+                        //val replacement = impl.createMethodFromText(setter,variable.containingFile)
+
+                        //println(setter)
+                        /*
+                        WriteCommandAction.runWriteCommandAction(e.project){
+                            ref.element.parent.replace(replacement)
+                        }
+
+                         */
+
+
                     }
+
                 }
-            })
+            }
         }
+        ApplicationManager.getApplication().runReadAction {
+            if (e.place == PROJECT_SCOPE) {
+                val srcFiles = walk(currentFile) {
+                    it.name.endsWith(".java")
+                }
+                srcFiles.forEach {
+                    val psiFile = manager.findFile(it)
+                    ProgressManager.progress("Processing ${psiFile?.name}")
+                    psiFile?.accept(visitor)
+                }
+            } else {
+                val psiFile = manager.findFile(currentFile)
+                psiFile?.accept(visitor)
+            }
+        }
+
     }
 }
