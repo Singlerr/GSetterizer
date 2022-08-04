@@ -2,8 +2,8 @@ package io.github.singlerr.gsetterizer.utils
 
 import com.intellij.openapi.vfs.VirtualFile
 
-fun walk(start:VirtualFile, filter: (VirtualFile) -> Boolean) : Set<VirtualFile>{
-    val fileFilter:(VirtualFile) -> Boolean = {
+fun walk(start: VirtualFile, filter: (VirtualFile) -> Boolean): Set<VirtualFile> {
+    val fileFilter: (VirtualFile) -> Boolean = {
         it.isDirectory || filter(it)
     }
     val resolvedFiles = HashSet<VirtualFile>()
@@ -14,10 +14,10 @@ fun walk(start:VirtualFile, filter: (VirtualFile) -> Boolean) : Set<VirtualFile>
 
     queue.addLast(currentVertex)
 
-    while(! queue.isEmpty()){
+    while (!queue.isEmpty()) {
         currentVertex = queue.removeFirst()
-        val children = currentVertex.children.filter(fileFilter).filter{
-           ! resolvedFiles.contains(it)
+        val children = currentVertex.children.filter(fileFilter).filter {
+            !resolvedFiles.contains(it)
         }
         children.forEach {
             queue.addLast(it)

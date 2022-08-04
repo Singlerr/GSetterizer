@@ -16,6 +16,10 @@
     <description>GSetterizer is a plugin that automatically refactors direct field access pattern to getter / setter pattern. Simply right click on anywhere, you can
         'gsetterize'</description>
 
+    <change-notes>
+        1. Added change-notes
+        2. Trying to add async task.
+    </change-notes>
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>

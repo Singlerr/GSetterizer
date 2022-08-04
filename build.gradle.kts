@@ -5,21 +5,24 @@ plugins {
 }
 
 group = "io.github.singlerr"
-version = "1.1-SNAPSHOT"
+version = "1.2-SNAPSHOT"
 
 repositories {
     mavenCentral()
+    maven{
+        url = uri("https://jitpack.io")
+    }
 }
 
 dependencies{
-    implementation("org.apache.commons:commons-text:1.9")
+    implementation("com.google.guava:guava:31.1-jre")
     implementation("org.jetbrains:marketplace-zip-signer:0.1.8")
 }
 
 // Configure Gradle IntelliJ Plugin
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
 intellij {
-    version.set("2021.3")
+    version.set("2022.1")
     type.set("IC") // Target IDE Platform
 
     plugins.set(listOf("com.intellij.java"))
