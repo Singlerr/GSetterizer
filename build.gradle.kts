@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.github.singlerr"
-version = "1.2-SNAPSHOT"
+version = "1.3"
 
 repositories {
     mavenCentral()

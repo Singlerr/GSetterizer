@@ -10,6 +10,8 @@ class VariableSearcher(private val psiFile: PsiFile) {
 
     private val variableVisitor: JavaRecursiveElementWalkingVisitor
     private val visitedVariables = HashMap<String, JavaClassInfo>()
+    val variables:Set<PsiVariable>
+        get() = visitedVariables.flatMap { e -> e.value.variables }.map { e -> e.pointer.element!! }.toSet()
 
     init {
         variableVisitor = object : JavaRecursiveElementWalkingVisitor() {
@@ -40,6 +42,8 @@ class VariableSearcher(private val psiFile: PsiFile) {
     fun startWalkingWithReadAction(){
         ApplicationManager.getApplication().runReadAction { startWalking() }
     }
+
+
 
     fun iterate(compute: (variable: JavaClassInfo) -> Unit) =
         visitedVariables.forEach { (_, variable) -> compute(variable) }
