@@ -1,7 +1,9 @@
 package io.github.singlerr.gsetterizer.utils
 
 import com.google.common.base.CaseFormat
-
+fun generateGetter(transformedName:String, isInImportStatement: Boolean) : String{
+    return if(isInImportStatement) transformedName else transformedName.plus("()")
+}
 fun generateGetter(originalName: String, isBoolean: Boolean, isInImportStatement:Boolean): String {
     val suffix = if(isInImportStatement) "" else "()"
     return if (isBoolean) {
@@ -31,7 +33,7 @@ fun generateSetter(originalName: String, isBoolean: Boolean): String {
 
 fun isUpperUnderscore(str:String) : Boolean{
     for(ch in str.toCharArray()){
-        if(ch !in 'A'..'Z' || ch != '_')
+        if(! ch.isUpperCase() && ch != '_')
             return false
     }
     return true

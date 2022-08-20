@@ -25,6 +25,10 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+
+    <applicationListeners>
+        <listener class="io.github.singlerr.gsetterizer.listener.ThreadingListener" topic="com.intellij.openapi.application.ApplicationListener"/>
+    </applicationListeners>
     <actions>
         <action id="io.github.singlerr.gsetterizer.actions.GSetterizeAction"
                 class="io.github.singlerr.gsetterizer.actions.GSetterizeAction" text="GSetterize"

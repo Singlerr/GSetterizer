@@ -1,17 +1,14 @@
 package io.github.singlerr.gsetterizer.visitor
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
 import com.intellij.psi.*
-import com.intellij.psi.util.elementType
-import io.ktor.utils.io.*
 
 class VariableSearcher(private val psiFile: PsiFile) {
 
     private val variableVisitor: JavaRecursiveElementWalkingVisitor
     private val visitedVariables = HashMap<String, JavaClassInfo>()
-    val variables:Set<PsiVariable>
-        get() = visitedVariables.flatMap { e -> e.value.variables }.map { e -> e.pointer.element!! }.toSet()
+    val variables: List<PsiVariable>
+        get() = visitedVariables.flatMap { e -> e.value.variables }.map { e -> e.pointer.element!! }
 
     init {
         variableVisitor = object : JavaRecursiveElementWalkingVisitor() {
@@ -19,12 +16,10 @@ class VariableSearcher(private val psiFile: PsiFile) {
                 super.visitVariable(variable)
                 if (variable?.parent !is PsiClass) return
 
-                val accessor = variable.children.find { e -> e.elementType?.debugName == "MODIFIER_LIST" } ?: return
-
-                if (!accessor.text.contains("public") || accessor.text.contains("final")) return
+                val accessor = variable.modifierList
 
                 val varPointer = SmartPointerManager.createPointer(variable)
-                val accessorPointer = SmartPointerManager.createPointer(accessor)
+                val accessorPointer = SmartPointerManager.createPointer(accessor as PsiElement)
                 val isBoolean = variable.type == PsiType.BOOLEAN
                 visitVariable(
                     variable.parent as PsiClass,
@@ -35,14 +30,14 @@ class VariableSearcher(private val psiFile: PsiFile) {
 
     }
 
-    fun startWalking(){
+    fun startWalking() {
         psiFile.accept(variableVisitor)
+
     }
 
-    fun startWalkingWithReadAction(){
+    fun startWalkingWithReadAction() {
         ApplicationManager.getApplication().runReadAction { startWalking() }
     }
-
 
 
     fun iterate(compute: (variable: JavaClassInfo) -> Unit) =

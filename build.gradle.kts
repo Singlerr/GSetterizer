@@ -1,3 +1,5 @@
+import okhttp3.internal.wait
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "1.6.20"
@@ -14,6 +16,7 @@ repositories {
 dependencies{
     implementation("com.google.guava:guava:31.1-jre")
     implementation("org.jetbrains:marketplace-zip-signer:0.1.8")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.9.0")
 }
 
 // Configure Gradle IntelliJ Plugin
@@ -49,4 +52,15 @@ tasks {
     publishPlugin {
         token.set(System.getenv("PUBLISH_TOKEN"))
     }
+}
+task("cleanProject"){
+    val targetWorkspace = File("../WakgoodFanGame")
+    val ideaProjectFolder = File("../")
+    if(targetWorkspace.exists())
+        targetWorkspace.deleteRecursively()
+
+    ProcessBuilder("git","clone","https://github.com/Bafguit/WakgoodFanGame.git")
+        .directory(ideaProjectFolder)
+        .start()
+        .also { it.waitFor() }
 }
