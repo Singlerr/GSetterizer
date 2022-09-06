@@ -1,29 +1,28 @@
 package io.github.singlerr.gsetterizer.actions
 
 
-import com.intellij.diff.actions.impl.OpenInEditorAction
-import com.intellij.ide.actions.OpenFileAction
-import com.intellij.ide.actions.OpenInRightSplitAction
+import com.intellij.codeInsight.hint.HintManager
+import com.intellij.notification.Notifications
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.EditorCoreUtil
-import com.intellij.openapi.editor.actionSystem.EditorActionManager
-import com.intellij.openapi.editor.actions.EditorActionUtil
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.util.ProgressWindow
-import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.project.DumbService
+import com.intellij.openapi.ui.popup.Balloon
 import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiFileFactory
+import com.intellij.psi.PsiInvalidElementAccessException
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.FilenameIndex
-import io.github.singlerr.gsetterizer.listener.ThreadingListener
-import io.github.singlerr.gsetterizer.processor.GSetterizeProcessor
-import io.github.singlerr.gsetterizer.visitor.VariableSearcher
+import com.intellij.refactoring.encapsulateFields.EncapsulateFieldsDialog
+import com.intellij.refactoring.encapsulateFields.EncapsulateFieldsProcessor
+import com.intellij.ui.BalloonLayout
+import com.intellij.ui.GotItMessage
+import io.github.singlerr.gsetterizer.processor.GSetterizableFieldDescriptor
+import io.github.singlerr.gsetterizer.visitor.ClassSearcher
 
 
 const val PROJECT_SCOPE = "ProjectViewPopup"
@@ -41,56 +40,53 @@ class GSetterizeAction : AnAction() {
      * @param e Carries information on the invocation place
      */
     override fun actionPerformed(e: AnActionEvent) {
-
-        val manager = PsiManager.getInstance(e.project!!)
+        val project = e.project!!
+        val manager = PsiManager.getInstance(project)
         val currentFile = e.dataContext.getData(PlatformDataKeys.VIRTUAL_FILE)!!
+        val progressWindow = ProgressWindow(false, project)
 
-        var progressWindow = ProgressWindow(true, e.project!!)
-        progressWindow.title = "GSetterizing..."
-
-        val listener = ThreadingListener()
-        ApplicationManager.getApplication().addApplicationListener(listener, Disposer.newDisposable())
-
-        ApplicationManager.getApplication().executeOnPooledThread {
-            if (e.place == PROJECT_SCOPE) {
+        progressWindow.title = "Encapsulating fields.."
+        if (e.place == PROJECT_SCOPE) {
+            ApplicationManager.getApplication().executeOnPooledThread {
                 val psiFiles = ApplicationManager.getApplication().runReadAction<List<PsiFile>> {
-                    val srcFiles = FilenameIndex.getAllFilesByExt(e.project!!, "java")
-                        .filter { file -> file.path.startsWith(currentFile.path) }
-                    val psiFiles = srcFiles.mapNotNull {
-                        manager.findFile(it)
-                    }
-                    psiFiles
+                    FilenameIndex.getAllFilesByExt(project, "java")
+                        .filter { !it.isDirectory && it.path.startsWith(currentFile.path) }
+                        .map { manager.findFile(it)!! }
                 }
 
-                val searcherList = HashSet<VariableSearcher>()
+                val searchers = mutableSetOf<ClassSearcher>()
+
                 ProgressManager.getInstance().runInReadActionWithWriteActionPriority({
-                    try {
-                        for (psiFile in psiFiles) {
-                            val searcher = VariableSearcher(psiFile)
-
-                            searcher.startWalking()
-
-                            progressWindow.text = "Processing ${psiFile.name}"
-                            searcherList.add(searcher)
-                        }
-                    } catch (e: ProcessCanceledException) {
-                        return@runInReadActionWithWriteActionPriority
+                    for (psiFile in psiFiles) {
+                        progressWindow.text = "Searching class ${psiFile.name}"
+                        val searcher = ClassSearcher(psiFile)
+                        searcher.processSearch()
+                        searchers.add(searcher)
                     }
                 }, progressWindow)
-                progressWindow = ProgressWindow(true, e.project!!)
-                progressWindow.title = "GSetterizing..."
-                ProgressManager.getInstance().runProcess({
-                    try {
-                        for (searcher in searcherList) {
-                            val processor = GSetterizeProcessor(e.project!!,searcher)
-                            processor.run()
+                progressWindow.pushState()
+                ApplicationManager.getApplication().invokeLaterOnWriteThread({
+                    for (searcher in searchers) {
+                        try{
+                            searcher.classes.forEach { cls ->
+                                progressWindow.text = "Processing ${cls.name}"
+                                val descriptor = ApplicationManager.getApplication().runReadAction<GSetterizableFieldDescriptor> { GSetterizableFieldDescriptor(cls) }
+                                val processor = EncapsulateFieldsProcessor(project, descriptor)
+                                processor.run()
+
+                            }
+                        }catch (e: ProcessCanceledException){
+                            break
+                        }catch(_:IllegalArgumentException){
+
+                        }catch(_:PsiInvalidElementAccessException){
+
                         }
-                    } catch (e: ProcessCanceledException) {
-                        return@runProcess
                     }
-                }, progressWindow)
-                println("Success")
+
+                }, ModalityState.NON_MODAL)
             }
         }
+
     }
 }

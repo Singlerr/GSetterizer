@@ -17,9 +17,8 @@
         'gsetterize'</description>
 
     <change-notes>
-        1. Enhanced source file structures.
-        2. Fixed bugs - Exception error in editor. Some elements are not gsetterized.
-        3. Enhanced code styles.
+        1. Added change-notes
+        2. Trying to add async task.
     </change-notes>
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
